@@ -6,7 +6,6 @@ import in.ajit.foodiesapi.entity.FoodEntity;
 import in.ajit.foodiesapi.io.FoodRequest;
 import in.ajit.foodiesapi.io.FoodResponse;
 import in.ajit.foodiesapi.repository.FoodRepository;
-import in.ajit.foodiesapi.service.FoodService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -25,35 +24,36 @@ public class FoodServiceImpl implements FoodService {
 
     @Autowired
     private Cloudinary cloudinary;
+
     @Autowired
     private FoodRepository foodRepository;
 
-
-
-    @Value("${cloudinary.upload-folder}") // Optional, if you want to organize images
+    // Upload folder name from application.properties
+    @Value("${cloudinary.upload-folder}")
     private String uploadFolder;
 
+    /**
+     * Uploads a file to Cloudinary and returns the secure URL.
+     */
     @Override
     public String uploadFile(MultipartFile file) {
-        // Generate a unique filename
         String filenameExtension = file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf(".") + 1);
-        String uniqueFilename = UUID.randomUUID().toString() + "." + filenameExtension;
+        String uniqueFilename = UUID.randomUUID().toString();
 
         try {
-            // Upload the file to Cloudinary
             Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
-                    "public_id", uploadFolder + "/" + uniqueFilename,  // Store inside an upload folder (optional)
-                    "resource_type", "auto"       // Auto-detect file type
+                    "public_id", uploadFolder + "/" + uniqueFilename,
+                    "resource_type", "auto"
             ));
-
-            // Get the secure URL of the uploaded image
             return uploadResult.get("secure_url").toString();
-
         } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "An error occurred while uploading the file");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error uploading file", e);
         }
     }
 
+    /**
+     * Adds a new food item with an uploaded image.
+     */
     @Override
     public FoodResponse addFood(FoodRequest request, MultipartFile file) {
         FoodEntity newFoodEntity = convertToEntity(request);
@@ -63,13 +63,85 @@ public class FoodServiceImpl implements FoodService {
         return convertToResponse(newFoodEntity);
     }
 
+    /**
+     * Retrieves all food items from the database.
+     */
     @Override
     public List<FoodResponse> readFoods() {
-        List<FoodEntity> databaseEntries = foodRepository.findAll();
-        return databaseEntries.stream().map(object ->convertToResponse(object)).collect(Collectors.toList());
+        return foodRepository.findAll().stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
     }
 
-    private FoodEntity convertToEntity(FoodRequest request){
+    // Without Stream
+//    public List<FoodResponse> readFoods() {
+//        List<FoodEntity> foodEntities = foodRepository.findAll();
+//        List<FoodResponse> foodResponses = new ArrayList<>();
+//
+//        for (FoodEntity foodEntity : foodEntities) {
+//            foodResponses.add(convertToResponse(foodEntity));
+//        }
+//
+//        return foodResponses;
+//    }
+
+
+    /**
+     * Retrieves a single food item by its ID.
+     */
+    @Override
+    public FoodResponse readFood(String id) {
+        FoodEntity existingFood = foodRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Food not found for the id " + id));
+        return convertToResponse(existingFood);
+    }
+
+    /**
+     * Deletes a file from Cloudinary using the extracted public ID.
+     */
+    @Override
+    public boolean deleteFile(String imageUrl) {
+        try {
+            // Step 1: Extract the path after 'upload/' (removing domain and version)
+            String afterUpload = imageUrl.substring(imageUrl.indexOf("upload/") + 7); // foodies-foods/14713155-f833-4209-ba36-74232db71ad0.jpg.jpg
+
+            // Step 2: Remove the version number (v1741935833/)
+            int firstSlash = afterUpload.indexOf("/");
+            String withoutVersion = afterUpload.substring(firstSlash + 1); // foodies-foods/14713155-f833-4209-ba36-74232db71ad0.jpg.jpg
+
+            // Step 3: Remove file extension (.jpg, .png, etc.)
+            String publicId = withoutVersion.substring(0, withoutVersion.lastIndexOf(".")); // foodies-foods/14713155-f833-4209-ba36-74232db71ad0
+
+            // Step 4: Delete file from Cloudinary
+            Map result = cloudinary.uploader().destroy(publicId, ObjectUtils.emptyMap());
+            return "ok".equals(result.get("result"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Deletes a food item, including its image from Cloudinary and record from MongoDB.
+     */
+    @Override
+    public void deleteFood(String id) {
+        FoodResponse response = readFood(id);
+        String imageUrl = response.getImageUrl();
+
+        boolean isFileDeleted = imageUrl == null || imageUrl.isEmpty() || deleteFile(imageUrl);
+
+        if (isFileDeleted) {
+            foodRepository.deleteById(response.getId());
+        } else {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to delete image, skipping database deletion.");
+        }
+    }
+
+    /**
+     * Converts FoodRequest DTO to FoodEntity.
+     */
+    private FoodEntity convertToEntity(FoodRequest request) {
         return FoodEntity.builder()
                 .name(request.getName())
                 .description(request.getDescription())
@@ -77,7 +149,28 @@ public class FoodServiceImpl implements FoodService {
                 .price(request.getPrice())
                 .build();
     }
-    private FoodResponse convertToResponse(FoodEntity entity){
+
+
+    /**
+     * Instead of using FoodEntity.builder(), we manually create an instance of FoodEntity.
+     * We use setter methods to set the properties.
+     * Finally, we return the populated FoodEntity object.
+     */
+
+//    private FoodEntity convertToEntity(FoodRequest request) {
+//        FoodEntity foodEntity = new FoodEntity();
+//        foodEntity.setName(request.getName());
+//        foodEntity.setDescription(request.getDescription());
+//        foodEntity.setCategory(request.getCategory());
+//        foodEntity.setPrice(request.getPrice());
+//        return foodEntity;
+//    }
+
+
+    /**
+     * Converts FoodEntity to FoodResponse DTO.
+     */
+    private FoodResponse convertToResponse(FoodEntity entity) {
         return FoodResponse.builder()
                 .id(entity.getId())
                 .name(entity.getName())

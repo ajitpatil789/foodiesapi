@@ -20,4 +20,6 @@ public class FoodEntity {
     private double price;
     private String category;
     private String imageUrl;
+
+
 }
