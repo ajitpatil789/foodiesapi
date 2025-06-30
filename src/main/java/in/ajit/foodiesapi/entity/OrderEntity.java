@@ -8,9 +8,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.List;
 
+@Document(collection = "orders")
 @Data
 @Builder
-@Document(collation = "orders")
 public class OrderEntity {
     @Id
     private String id;
