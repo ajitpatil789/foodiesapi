@@ -36,16 +36,17 @@ public class OrderServiceImpl implements OrderService {
         OrderEntity newOrder = convertToEntity(request);
         newOrder = orderRepository.save(newOrder);
 
-        // Create Razorpay payment order
+        // Ensure amount is an integer (paise)
+        int amountInPaise = (int) Math.round(newOrder.getAmount() * 100);
+
         RazorpayClient razorpayClient = new RazorpayClient(RAZORPAY_KEY, RAZORPAY_SECRET);
         JSONObject orderRequest = new JSONObject();
-        orderRequest.put("amount", newOrder.getAmount() * 100);
+        orderRequest.put("amount", amountInPaise);
         orderRequest.put("currency", "INR");
         orderRequest.put("payment_capture", 1);
 
         Order razorpayOrder = razorpayClient.orders.create(orderRequest);
         newOrder.setRazorpayOrderId(razorpayOrder.get("id"));
-        //newOrder.setAmount(razorpayOrder.get("amount"));
         String loggedInUserId = userService.findByUserId();
         newOrder.setUserId(loggedInUserId);
         newOrder = orderRepository.save(newOrder);
