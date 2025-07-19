@@ -1,14 +1,12 @@
-# Step 1: Use OpenJDK image
-FROM openjdk:17-jdk-slim
-
-# Step 2: Set workdir
+# Stage 1: Build the app using Maven
+FROM maven:3.9.5-eclipse-temurin-17 as build
 WORKDIR /app
+COPY . .
+RUN mvn clean install -DskipTests
 
-# Step 3: Copy jar file (adjust your jar file name after build)
-COPY target/foodiesapi-0.0.1-SNAPSHOT.jar app.jar
-
-# Step 4: Expose the port (important for Render)
+# Stage 2: Run the JAR
+FROM eclipse-temurin:17-jdk-alpine
+WORKDIR /app
+COPY --from=build /app/target/foodiesapi-0.0.1-SNAPSHOT.jar app.jar
 EXPOSE 8080
-
-# Step 5: Run the jar file
 ENTRYPOINT ["java", "-jar", "app.jar"]
